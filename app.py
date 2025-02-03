@@ -1,14 +1,14 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-from db import dbProject
-from dotenv import load_dotenv
+import sqlite3
 import os
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}})  # More robust CORS
+# CORS harus dibatasi di production
+# CORS(app, resources={r"/*": {"origins": "*"}})  # Hapus atau batasi origin
+CORS(app, origins=["*"]) # contoh
 
-load_dotenv()
-API_KEY = os.getenv("API_KEY")
+API_KEY = os.environ.get("API_KEY")
 
 def verify_api_key():
     key = request.headers.get("X-API-KEY")
@@ -29,23 +29,46 @@ def add_project():
     if auth:
         return auth
 
-    new_id = dbProject[-1]["id"] + 1 if dbProject else 1
-    new_project = {
-        "id": new_id,
-        "title": request.json.get("title"),
-        "categories": request.json.get("categories"),
-        "description": request.json.get("description")
-    }
-    dbProject.append(new_project)
+    conn = sqlite3.connect('project.db')
+    cursor = conn.cursor()
 
-    return jsonify({"message": "Project successfully added.", "project": new_project}), 201
+    try:
+        cursor.execute("INSERT INTO projects (title, categories, description) VALUES (?, ?, ?)",
+                       (request.json.get("title"), request.json.get("categories"), request.json.get("description")))
+        conn.commit()
+        new_id = cursor.lastrowid  # Mendapatkan ID yang baru di-insert
+        new_project = {
+            "id": new_id,
+            "title": request.json.get("title"),
+            "categories": request.json.get("categories"),
+            "description": request.json.get("description")
+        }
+        return jsonify({"message": "Project successfully added.", "project": new_project}), 201
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"error": "Failed to add project", "message": str(e)}), 500
+    finally:
+        conn.close()
+
 
 @app.route('/project/<int:project_id>', methods=['GET'])
 def get_project_by_id(project_id):
-    project = next((item for item in dbProject if item["id"] == project_id), None)
+    conn = sqlite3.connect('project.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM projects WHERE id = ?", (project_id,))
+    project = cursor.fetchone()
+    conn.close()
     if project:
-        return jsonify(project)
+        # Mengubah tuple menjadi dictionary
+        project_dict = {
+            "id": project[0],
+            "title": project[1],
+            "categories": project[2],
+            "description": project[3]
+        }
+        return jsonify(project_dict)
     return jsonify({"error": "Project not found"}), 404
+
 
 @app.route('/project', methods=['GET'])
 def get_projects():
@@ -53,19 +76,39 @@ def get_projects():
     if auth:
         return auth
 
+    conn = sqlite3.connect('project.db')
+    cursor = conn.cursor()
+
     category = request.args.get('category')
 
     if category:
-        filtered_projects = [project for project in dbProject if project.get("categories") == category]
+        cursor.execute("SELECT * FROM projects WHERE categories = ?", (category,))
+    else:
+        cursor.execute("SELECT * FROM projects")
+
+    projects = cursor.fetchall()
+    conn.close()
+
+    project_list = []
+    for project in projects:
+        project_dict = {
+            "id": project[0],
+            "title": project[1],
+            "categories": project[2],
+            "description": project[3]
+        }
+        project_list.append(project_dict)
+
+    if category:
         return jsonify({
             "message": f"Projects in category '{category}'.",
-            "projects": filtered_projects
+            "projects": project_list
         }), 200
-
-    return jsonify({
-        "message": "All projects.",
-        "projects": dbProject
-    }), 200
+    else:
+        return jsonify({
+            "message": "All projects.",
+            "projects": project_list
+        }), 200
 
 @app.errorhandler(404)
 def not_found(error):
@@ -76,7 +119,7 @@ def internal_error(error):
     return jsonify({"error": "Internal Server Error", "message": "An unexpected error occurred"}), 500
 
 if __name__ == '__main__':
-    port = int(os.getenv('PORT', 8080))
-    debug = os.getenv('DEBUG', 'False').lower() == 'true'
+    port = int(os.environ.get('PORT', 8080)) # Ambil dari env Render
+    debug = os.environ.get('DEBUG', 'False').lower() == 'true' # Ambil dari env Render
     print(f"Server is running on port: {port}")
     app.run(debug=debug, port=port)
