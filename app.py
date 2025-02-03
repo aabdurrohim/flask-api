@@ -1,6 +1,5 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-from db import dbProject  # Assuming this is where your project data is
 from dotenv import load_dotenv
 import os
 
