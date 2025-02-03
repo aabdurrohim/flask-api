@@ -4,8 +4,6 @@ import sqlite3
 import os
 
 app = Flask(__name__)
-# CORS harus dibatasi di production
-# CORS(app, resources={r"/*": {"origins": "*"}})  # Hapus atau batasi origin
 CORS(app, origins=["*"]) # contoh
 
 API_KEY = os.environ.get("API_KEY")
@@ -119,7 +117,4 @@ def internal_error(error):
     return jsonify({"error": "Internal Server Error", "message": "An unexpected error occurred"}), 500
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 8080)) # Ambil dari env Render
-    debug = os.environ.get('DEBUG', 'False').lower() == 'true' # Ambil dari env Render
-    print(f"Server is running on port: {port}")
-    app.run(debug=debug, port=port)
+    app.run()
